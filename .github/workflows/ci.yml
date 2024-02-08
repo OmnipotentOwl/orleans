@@ -228,7 +228,6 @@ jobs:
           **/TestResults/*
           **/logs/*
   test-azure-cosmosdb:
-    if: ${{ false }}
     name: Azure Cosmos DB provider tests
     runs-on: windows-latest
     strategy:
