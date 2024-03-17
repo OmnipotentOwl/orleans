@@ -105,15 +105,15 @@ namespace Orleans.Hosting.Kubernetes
                         namespaceParameter: _podNamespace,
                         labelSelector: _podLabelSelector,
                         cancellationToken: cancellation);
-                    var clusterPods = new HashSet<string> { _podName };
+                    var clusterPods = new HashSet<string> { $"{_podNamespace}_{_podName}" };
                     foreach (var pod in pods.Items)
                     {
-                        clusterPods.Add(pod.Metadata.Name);
+                        clusterPods.Add($"{pod.Metadata.Namespace}_{pod.Metadata.Name}");
                     }
 
                     var known = new HashSet<string>();
                     var knownMap = new Dictionary<string, ClusterMember>();
-                    known.Add(_podName);
+                    known.Add($"{_podNamespace}_{_podName}");
                     foreach (var member in snapshot.Values)
                     {
                         if (member.Status == SiloStatus.Dead)
@@ -134,7 +134,10 @@ namespace Orleans.Hosting.Kubernetes
                         // Delete the pod once it has been active long enough?
                     }
 
-                    var unmatched = new List<string>(known.Except(clusterPods));
+                    //Filter list of known silo pods to only the namespace of the current silo
+                    var managedPods = new List<string>(known.Where(p => p.Contains($"{_podNamespace}_")));
+
+                    var unmatched = new List<string>(managedPods.Except(clusterPods));
                     unmatched.Sort();
                     foreach (var pod in unmatched)
                     {
@@ -238,6 +241,12 @@ namespace Orleans.Hosting.Kubernetes
                             var delta = update.CreateUpdate(previous);
                             foreach (var change in delta.Changes)
                             {
+                                var podName = change.Name;
+                                if (change.Name.Contains("_"))
+                                {
+                                    podName = change.Name.Split("_")[1];
+                                }
+
                                 if (change.SiloAddress.Equals(_localSiloDetails.SiloAddress))
                                 {
                                     // Ignore all changes for this silo
@@ -250,14 +259,14 @@ namespace Orleans.Hosting.Kubernetes
                                     {
                                         if (_logger.IsEnabled(LogLevel.Information))
                                         {
-                                            _logger.LogInformation("Silo {SiloAddress} is dead, proceeding to delete the corresponding pod, {PodName}, in namespace {PodNamespace}", change.SiloAddress, change.Name, _podNamespace);
+                                            _logger.LogInformation("Silo {SiloAddress} is dead, proceeding to delete the corresponding pod, {PodName}, in namespace {PodNamespace}", change.SiloAddress, podName, _podNamespace);
                                         }
 
-                                        await _client.DeleteNamespacedPodAsync(change.Name, _podNamespace);
+                                        await _client.DeleteNamespacedPodAsync(podName, _podNamespace);
                                     }
                                     catch (Exception exception)
                                     {
-                                        _logger.LogError(exception, "Error deleting pod {PodName} in namespace {PodNamespace} corresponding to defunct silo {SiloAddress}", change.Name, _podNamespace, change.SiloAddress);
+                                        _logger.LogError(exception, "Error deleting pod {PodName} in namespace {PodNamespace} corresponding to defunct silo {SiloAddress}", podName, _podNamespace, change.SiloAddress);
                                     }
                                 }
                             }
@@ -363,7 +372,7 @@ namespace Orleans.Hosting.Kubernetes
             var snapshot = _clusterMembershipService.CurrentSnapshot;
             foreach (var member in snapshot.Members)
             {
-                if (string.Equals(member.Value.Name, pod.Metadata.Name, StringComparison.Ordinal))
+                if (string.Equals(member.Value.Name, $"{pod.Metadata.Namespace}_{pod.Metadata.Name}", StringComparison.Ordinal))
                 {
                     server = member.Value;
                     return true;

@@ -52,7 +52,7 @@ namespace Orleans.Hosting.Kubernetes
             var hostingOptions = _serviceProvider.GetRequiredService<IOptions<KubernetesHostingOptions>>().Value;
             if (!string.IsNullOrWhiteSpace(hostingOptions.PodName))
             {
-                options.SiloName = hostingOptions.PodName;
+                options.SiloName = $"{hostingOptions.Namespace}_{hostingOptions.PodName}";
             }
         }
 
